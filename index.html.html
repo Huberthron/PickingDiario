@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Interactivo de Picking</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        roboto: ['Roboto', 'sans-serif'],
+                    },
+                    colors: {
+                        darkBg: '#0f172a',
+                        cardBg: '#1e293b',
+                        accentCyan: '#06b6d4',
+                        accentGreen: '#10b981',
+                        accentPink: '#ec4899'
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+
+        /* Efecto de difuminado para el scroll (Requisito) */
+        .fade-scroll {
+            mask-image: linear-gradient(to bottom, transparent 0%, black 10%, black 90%, transparent 100%);
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 10%, black 90%, transparent 100%);
+            overflow-y: auto;
+            padding-top: 20px;
+            padding-bottom: 20px;
+            max-height: 600px;
+        }
+
+        /* Personalización sutil del scrollbar */
+        .fade-scroll::-webkit-scrollbar { width: 4px; }
+        .fade-scroll::-webkit-scrollbar-track { background: transparent; }
+        .fade-scroll::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
+
+        /* Transiciones suaves */
+        .card-hover { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5); }
+    </style>
+</head>
+<body class="font-roboto min-h-screen flex flex-col overflow-x-hidden">
+
+    <header class="bg-cardBg border-b border-slate-700 p-4 sticky top-0 z-50 shadow-md">
+        
+        <div id="toastNotification" class="fixed top-24 right-5 bg-accentGreen text-white px-4 py-3 rounded-xl shadow-[0_5px_15px_rgba(16,185,129,0.4)] transform transition-all duration-500 translate-x-[150%] opacity-0 z-50 flex items-center gap-3 border border-emerald-400">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <div class="flex flex-col">
+                <span class="font-bold text-sm">¡Dashboard Actualizado!</span>
+                <span class="text-xs text-emerald-100">Datos sincronizados desde Drive</span>
+            </div>
+        </div>
+
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <img src="logo chavez 2.png" alt="Farmacias Chavez" class="h-10 filter brightness-0 invert object-contain" onerror="this.src='https://placehold.co/100x40/0f172a/ffffff?text=Logo+Aqui'" />
+                <h1 class="text-2xl font-bold text-white tracking-wide border-l border-slate-600 pl-3">Picking Cedis <span class="text-accentCyan font-light">2026</span></h1>
+            </div>
+            
+            <div class="flex items-center gap-3 bg-darkBg p-2 rounded-xl border border-slate-700 w-full md:w-auto">
+                <span class="relative flex h-3 w-3 ml-2">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accentGreen opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-3 w-3 bg-accentGreen"></span>
+                </span>
+                <span id="fileStatusLabel" class="text-sm text-accentGreen font-medium pr-2">Conectado a Drive</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-grow p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto w-full flex flex-col xl:flex-row gap-6 relative">
+        
+        <div id="emptyState" class="w-full flex flex-col items-center justify-center py-20 text-slate-500 col-span-full absolute inset-0 mt-20 z-0">
+            <svg class="w-20 h-20 mb-4 opacity-50 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+            <h2 class="text-xl font-medium text-slate-400">Conectando con Google Drive...</h2>
+            <p class="text-sm mt-2 max-w-md text-center">Descargando indicadores de la nube</p>
+        </div>
+
+        <div id="dashboardContent" class="flex-grow flex flex-col gap-6 opacity-0 transition-opacity duration-500 hidden z-10">
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="card-hover bg-cardBg p-6 rounded-2xl border border-slate-700/50 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-24 h-24 bg-accentCyan opacity-10 rounded-bl-full"></div>
+                    <p class="text-sm text-slate-400 font-medium uppercase tracking-wider mb-1">Filas Pickeadas</p>
+                    <h3 id="kpi-picked" class="text-4xl font-bold text-white mb-2 text-transparent bg-clip-text bg-gradient-to-r from-accentCyan to-cyan-300">0</h3>
+                    <p class="text-xs text-slate-500">Total procesado diario</p>
+                </div>
+                
+                <div class="card-hover bg-cardBg p-6 rounded-2xl border border-slate-700/50 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-24 h-24 bg-accentPink opacity-10 rounded-bl-full"></div>
+                    <p class="text-sm text-slate-400 font-medium uppercase tracking-wider mb-1">Filas Restantes</p>
+                    <h3 id="kpi-remaining" class="text-4xl font-bold text-white mb-2 text-transparent bg-clip-text bg-gradient-to-r from-accentPink to-pink-300">0</h3>
+                    <p class="text-xs text-slate-500">Pendientes por recoger diario</p>
+                </div>
+                
+                <div class="card-hover bg-cardBg p-6 rounded-2xl border border-slate-700/50 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-24 h-24 bg-accentGreen opacity-10 rounded-bl-full"></div>
+                    <p class="text-sm text-slate-400 font-medium uppercase tracking-wider mb-1">% Cumplimiento</p>
+                    <h3 id="kpi-compliance" class="text-4xl font-bold text-white mb-2 text-transparent bg-clip-text bg-gradient-to-r from-accentGreen to-emerald-300">0%</h3>
+                    <p class="text-xs text-slate-500">Respecto al objetivo total</p>
+                </div>
+            </div>
+
+            <div class="bg-cardBg p-4 rounded-xl border border-slate-700/50 flex justify-between items-center gap-4">
+                <span class="text-sm font-medium text-slate-300 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-accentCyan" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
+                    Buscador
+                </span>
+                <input type="text" id="searchInput" placeholder="Buscar operador o área..." class="bg-darkBg border border-slate-600 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-accentCyan w-full max-w-xs transition-colors">
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 bg-cardBg p-6 rounded-2xl border border-slate-700/50 flex flex-col justify-center relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-64 h-64 bg-accentCyan opacity-5 rounded-full blur-3xl -mr-20 -mt-20"></div>
+                    
+                    <div class="mb-10 z-10">
+                        <h3 class="text-lg font-medium text-white mb-1">Línea de Tiempo de Cumplimiento</h3>
+                        <p class="text-sm text-slate-400">Avance de preparación y recolección de pedidos</p>
+                    </div>
+                    
+                    <div class="relative w-full pb-8 z-10 px-4">
+                        <div class="absolute top-1/2 left-4 right-4 h-3 bg-slate-800 rounded-full -translate-y-1/2 shadow-inner border border-slate-700/50"></div>
+                        <div class="absolute top-1/2 left-4 h-3 bg-gradient-to-r from-accentCyan to-accentGreen rounded-full -translate-y-1/2 transition-all duration-1000 ease-out shadow-[0_0_15px_rgba(16,185,129,0.4)]" id="timelineProgress" style="width: 0%"></div>
+                        
+                        <div class="relative flex justify-between z-10">
+                            <div class="flex flex-col items-center"><div class="w-7 h-7 rounded-full bg-slate-800 border-4 border-slate-600 flex items-center justify-center z-10 transition-all duration-500 shadow-lg" id="node-0"></div><span class="absolute mt-10 text-xs text-slate-400 font-medium">Inicio</span></div>
+                            <div class="flex flex-col items-center"><div class="w-7 h-7 rounded-full bg-slate-800 border-4 border-slate-600 flex items-center justify-center z-10 transition-all duration-500 shadow-lg" id="node-25"></div><span class="absolute mt-10 text-xs text-slate-400 font-medium">25%</span></div>
+                            <div class="flex flex-col items-center"><div class="w-7 h-7 rounded-full bg-slate-800 border-4 border-slate-600 flex items-center justify-center z-10 transition-all duration-500 shadow-lg" id="node-50"></div><span class="absolute mt-10 text-xs text-slate-400 font-medium">50%</span></div>
+                            <div class="flex flex-col items-center"><div class="w-7 h-7 rounded-full bg-slate-800 border-4 border-slate-600 flex items-center justify-center z-10 transition-all duration-500 shadow-lg" id="node-75"></div><span class="absolute mt-10 text-xs text-slate-400 font-medium">75%</span></div>
+                            <div class="flex flex-col items-center"><div class="w-7 h-7 rounded-full bg-slate-800 border-4 border-slate-600 flex items-center justify-center z-10 transition-all duration-500 shadow-lg" id="node-100"></div><span class="absolute mt-10 text-xs text-accentGreen font-bold uppercase">Meta</span></div>
+                        </div>
+                        
+                        <div id="timelineIndicator" class="absolute top-1/2 left-4 -translate-y-1/2 -ml-5 w-10 h-10 bg-cardBg rounded-xl shadow-[0_5px_15px_rgba(0,0,0,0.5)] flex items-center justify-center z-20 transition-all duration-1000 ease-out border-2 border-accentCyan text-white">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-cardBg p-6 rounded-2xl border border-slate-700/50 flex flex-col">
+                    <h3 class="text-lg font-medium text-white mb-2 text-center z-10">Progreso General</h3>
+                    <div class="relative flex-grow flex items-center justify-center min-h-[220px]">
+                        <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pb-6 z-10">
+                            <span class="text-[10px] text-slate-400 uppercase tracking-widest mb-1">Total</span>
+                            <span id="inner-doughnut-text" class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-accentCyan to-accentGreen drop-shadow-lg">0%</span>
+                        </div>
+                        <div class="relative w-full h-full z-0">
+                            <canvas id="doughnutChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <aside id="rightPanel" class="w-full xl:w-80 flex-shrink-0 bg-cardBg rounded-2xl border border-slate-700/50 flex flex-col opacity-0 transition-opacity duration-500 hidden xl:flex z-10">
+            <div class="p-6 pb-2 border-b border-slate-700/50">
+                <h3 class="text-lg font-medium text-white flex items-center gap-2">
+                    <svg class="w-5 h-5 text-accentCyan" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                    Ranking de Operadores
+                </h3>
+                <p class="text-xs text-slate-400 mt-1">Desliza para ver todos</p>
+            </div>
+            
+            <div class="flex-grow relative px-4">
+                <div id="materialsList" class="fade-scroll h-full">
+                    </div>
+            </div>
+        </aside>
+    </main>
+
+    <script>
+        // Variables globales
+        let rawData = { kpis: null, users: null };
+        let doughnutChartInstance = null;
+        let doughnutRotation = 0;
+        let doughnutAnimationInterval = null;
+        
+        let exactScroll = 0;
+        let reqAnimFrame = null;
+        let isHoveringList = false;
+        
+        let isFirstLoad = true;
+
+        // URL de tu Google Sheets (¡Ajustada a output=xlsx para conservar las pestañas!)
+        const CLOUD_EXCEL_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6LwLv6sfipcewpe4qaIq_m_QKX09i94jupU9Pg60paX3oJlGmYrnvLGPeFAPEJA/pub?output=xlsx';
+
+        // Configuración por defecto de Chart.js
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.font.family = "'Roboto', sans-serif";
+        Chart.defaults.scale.grid.color = 'rgba(71, 85, 105, 0.2)';
+
+        // Event Listeners Principales
+        document.getElementById('searchInput').addEventListener('input', (e) => renderDashboard(e.target.value.toLowerCase()));
+
+        const listContainer = document.getElementById('materialsList');
+        listContainer.addEventListener('mouseenter', () => isHoveringList = true);
+        listContainer.addEventListener('mouseleave', () => isHoveringList = false);
+        listContainer.addEventListener('touchstart', () => isHoveringList = true);
+        listContainer.addEventListener('touchend', () => { setTimeout(() => isHoveringList = false, 2000) });
+
+        // Lógica de conexión con Google Drive
+        async function fetchCloudData() {
+            try {
+                // Fetch al enlace público (agregamos un parámetro de tiempo para evitar caché del navegador)
+                const response = await fetch(CLOUD_EXCEL_URL + "&t=" + new Date().getTime());
+                
+                if (!response.ok) throw new Error("Error en la conexión");
+                
+                const arrayBuffer = await response.arrayBuffer();
+                processExcelBuffer(arrayBuffer);
+                
+                if (!isFirstLoad) showToast();
+                isFirstLoad = false;
+                
+                const statusLabel = document.getElementById('fileStatusLabel');
+                statusLabel.innerText = "Conectado a Drive";
+                statusLabel.className = "text-sm text-accentGreen font-medium pr-2";
+                
+            } catch (error) {
+                console.error("Error obteniendo datos de Drive:", error);
+                const statusLabel = document.getElementById('fileStatusLabel');
+                statusLabel.innerText = "Reconectando...";
+                statusLabel.className = "text-sm text-accentPink font-medium pr-2";
+            }
+        }
+
+        function showToast() {
+            const toast = document.getElementById('toastNotification');
+            toast.classList.remove('translate-x-[150%]', 'opacity-0');
+            setTimeout(() => toast.classList.add('translate-x-[150%]', 'opacity-0'), 3500);
+        }
+
+        function processExcelBuffer(buffer) {
+            const data = new Uint8Array(buffer);
+            const workbook = XLSX.read(data, {type: 'array'});
+            
+            // 1. Extraer pestaña "diario"
+            let sheetDiarioName = workbook.SheetNames.find(n => n.toLowerCase().includes('diario')) || workbook.SheetNames[0];
+            const worksheetDiario = workbook.Sheets[sheetDiarioName];
+            const jsonDiario = XLSX.utils.sheet_to_json(worksheetDiario, {header: 1});
+            
+            // 2. Extraer pestaña "mes"
+            let sheetMesName = workbook.SheetNames.find(n => n.toLowerCase().includes('mes'));
+            if (!sheetMesName && workbook.SheetNames.length > 1) sheetMesName = workbook.SheetNames[1];
+            
+            let usersArray = [];
+            if (sheetMesName) {
+                const worksheetMes = workbook.Sheets[sheetMesName];
+                const jsonMes = XLSX.utils.sheet_to_json(worksheetMes);
+                usersArray = aggregateMesData(jsonMes);
+            }
+
+            parseData(jsonDiario, usersArray);
+        }
+
+        function aggregateMesData(data) {
+            const userMap = {};
+            const areaMap = {};
+
+            data.forEach(row => {
+                const nombre = row['Nombres (2)'];
+                const area = row['Area'];
+                const lineas = parseFloat(row['Lineas']) || 0;
+                const mes = row['mes'] || '';
+
+                if (!nombre || nombre.trim() === '') return;
+
+                if (!areaMap[area]) areaMap[area] = 0;
+                areaMap[area] += lineas;
+
+                if (!userMap[nombre]) userMap[nombre] = { name: nombre, area: area, mes: mes, lineas: 0 };
+                userMap[nombre].lineas += lineas;
+                userMap[nombre].mes = mes;
+            });
+
+            let usersArray = Object.values(userMap).map(u => {
+                const totalArea = areaMap[u.area] || 1;
+                u.porcentaje = (u.lineas / totalArea) * 100;
+                return u;
+            });
+
+            usersArray.sort((a, b) => b.lineas - a.lineas);
+            return usersArray;
+        }
+
+        function parseData(matrix, usersArray = []) {
+            let kpiPicked = 0, kpiRemaining = 0, kpiCompliance = 0;
+
+            for (let r = 0; r < matrix.length; r++) {
+                const row = matrix[r];
+                if (!row || row.length === 0) continue;
+
+                for (let c = 0; c < row.length; c++) {
+                    if (typeof row[c] === 'string') {
+                        const cellStr = row[c].trim().toUpperCase();
+                        if (cellStr === 'FILAS PICK' && row[c+1] !== undefined) kpiPicked = parseFloat(row[c+1]) || 0;
+                        if (cellStr === 'FILAS RESTANTES' && row[c+1] !== undefined) kpiRemaining = parseFloat(row[c+1]) || 0;
+                        if (cellStr === 'CUMPLIMIENTO' && row[c+1] !== undefined) kpiCompliance = parseFloat(row[c+1]) || 0;
+                    }
+                }
+            }
+
+            rawData = {
+                kpis: { picked: kpiPicked, remaining: kpiRemaining, compliance: kpiCompliance },
+                users: usersArray
+            };
+
+            document.getElementById('emptyState').classList.add('hidden');
+            document.getElementById('dashboardContent').classList.remove('hidden');
+            document.getElementById('dashboardContent').classList.add('opacity-100');
+            document.getElementById('rightPanel').classList.remove('hidden');
+            document.getElementById('rightPanel').classList.add('opacity-100');
+            
+            renderDashboard(document.getElementById('searchInput').value.toLowerCase() || '');
+        }
+
+        function renderDashboard(filterTerm) {
+            if (!rawData.users) return;
+            const filteredUsers = rawData.users.filter(u => u.name.toLowerCase().includes(filterTerm) || u.area.toLowerCase().includes(filterTerm));
+            updateKPIs(rawData.kpis);
+            updateCharts(rawData.kpis);
+            updateRightList(filteredUsers);
+        }
+
+        function updateKPIs(kpis) {
+            document.getElementById('kpi-picked').innerText = kpis.picked.toLocaleString('es-ES');
+            document.getElementById('kpi-remaining').innerText = kpis.remaining.toLocaleString('es-ES');
+            
+            let comp = kpis.compliance;
+            if (comp > 0 && comp <= 1) comp = comp * 100;
+            const compString = comp.toFixed(2) + '%';
+            
+            document.getElementById('kpi-compliance').innerText = compString;
+            document.getElementById('inner-doughnut-text').innerText = compString;
+
+            const clampedComp = Math.min(Math.max(comp, 0), 100);
+            const timelineProgress = document.getElementById('timelineProgress');
+            const timelineIndicator = document.getElementById('timelineIndicator');
+            
+            if (timelineProgress && timelineIndicator) {
+                timelineProgress.style.width = `calc(${clampedComp}% - 1rem)`;
+                timelineIndicator.style.left = `calc(${clampedComp}% + 1rem)`;
+                
+                [0, 25, 50, 75, 100].forEach(nodeVal => {
+                    const nodeEl = document.getElementById('node-' + nodeVal);
+                    if (nodeEl) {
+                        if (clampedComp >= nodeVal) {
+                            nodeEl.classList.replace('bg-slate-800', 'bg-cardBg');
+                            nodeEl.classList.replace('border-slate-600', 'border-accentCyan');
+                            if(nodeVal === 100) nodeEl.classList.replace('border-accentCyan', 'border-accentGreen');
+                        } else {
+                            nodeEl.classList.add('bg-slate-800', 'border-slate-600');
+                            nodeEl.classList.remove('bg-cardBg', 'border-accentCyan', 'border-accentGreen');
+                        }
+                    }
+                });
+            }
+        }
+
+        function updateCharts(kpis) {
+            const ctxDoughnut = document.getElementById('doughnutChart').getContext('2d');
+            
+            if (doughnutChartInstance) {
+                doughnutChartInstance.data.datasets[0].data = [kpis.picked, kpis.remaining];
+                doughnutChartInstance.update();
+            } else {
+                doughnutChartInstance = new Chart(ctxDoughnut, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Pickeadas', 'Restantes'],
+                        datasets: [{
+                            data: [kpis.picked, kpis.remaining],
+                            backgroundColor: ['#06b6d4', '#ec4899'],
+                            borderColor: '#1e293b',
+                            borderWidth: 4,
+                            hoverOffset: 12, hoverBorderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false, cutout: '80%', rotation: doughnutRotation,
+                        plugins: {
+                            legend: { position: 'bottom', labels: { padding: 15, usePointStyle: true, pointStyle: 'circle' } },
+                            tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.95)', bodyColor: '#f8fafc', borderColor: '#334155', borderWidth: 1, padding: 12 }
+                        },
+                        animation: { animateScale: true, duration: 1500, easing: 'easeOutQuart' }
+                    }
+                });
+
+                if(doughnutAnimationInterval) clearInterval(doughnutAnimationInterval);
+                doughnutAnimationInterval = setInterval(() => {
+                    if (doughnutChartInstance) {
+                        doughnutRotation = (doughnutRotation + 0.5) % 360;
+                        doughnutChartInstance.options.rotation = doughnutRotation;
+                        doughnutChartInstance.update('none'); 
+                    }
+                }, 40);
+            }
+        }
+
+        function updateRightList(users) {
+            const listContainer = document.getElementById('materialsList');
+            listContainer.innerHTML = ''; 
+
+            if (users.length === 0) {
+                listContainer.innerHTML = `<div class="text-slate-500 text-sm text-center mt-10">No se encontraron resultados</div>`;
+                return;
+            }
+
+            const createListItem = (user, index) => {
+                const isEven = index % 2 === 0;
+                const div = document.createElement('div');
+                div.className = `flex justify-between items-center p-3 rounded-lg border border-transparent hover:border-slate-600 hover:bg-slate-700/30 transition-colors ${isEven ? 'bg-slate-800/30' : ''}`;
+                
+                const pctStr = user.porcentaje.toFixed(1) + '%';
+                div.innerHTML = `
+                    <div class="flex items-center gap-3 overflow-hidden w-[60%]">
+                        <div class="w-2 h-2 rounded-full bg-accentCyan flex-shrink-0 shadow-[0_0_8px_#06b6d4]"></div>
+                        <div class="flex flex-col truncate">
+                            <span class="text-sm font-medium text-slate-200 truncate" title="${user.name}">${user.name}</span>
+                            <span class="text-[10px] text-slate-400 truncate capitalize">${user.mes} • ${user.area}</span>
+                        </div>
+                    </div>
+                    <div class="flex flex-col items-end flex-shrink-0 w-[35%]">
+                        <span class="text-sm font-bold text-accentCyan">${user.lineas.toLocaleString('es-ES')}</span>
+                        <span class="text-[10px] text-accentGreen bg-accentGreen/10 px-1.5 py-0.5 rounded mt-0.5 whitespace-nowrap">${pctStr} del Área</span>
+                    </div>
+                `;
+                return div;
+            };
+
+            const originalBlock = document.createElement('div');
+            originalBlock.id = 'scroll-original';
+            originalBlock.className = 'flex flex-col gap-3 pb-3'; 
+            
+            users.forEach((user, index) => originalBlock.appendChild(createListItem(user, index)));
+            listContainer.appendChild(originalBlock);
+
+            for(let i = 0; i < 2; i++) {
+                const clone = originalBlock.cloneNode(true);
+                clone.id = 'scroll-clone-' + i;
+                listContainer.appendChild(clone);
+            }
+
+            startAutoScroll();
+        }
+
+        function startAutoScroll() {
+            const listContainer = document.getElementById('materialsList');
+            if (reqAnimFrame) cancelAnimationFrame(reqAnimFrame);
+            
+            exactScroll = 0;
+            listContainer.scrollTop = 0; 
+            
+            setTimeout(() => {
+                const originalBlock = document.getElementById('scroll-original');
+                if (!originalBlock) return;
+                
+                const resetPoint = originalBlock.offsetHeight;
+                
+                if (listContainer.scrollHeight > listContainer.clientHeight) {
+                    let lastTime = performance.now();
+                    const speed = 0.035; 
+                    
+                    function scrollLoop(time) {
+                        const deltaTime = time - lastTime;
+                        lastTime = time;
+
+                        if (!isHoveringList) {
+                            exactScroll += speed * deltaTime;
+                            
+                            if (exactScroll >= resetPoint) {
+                                exactScroll -= resetPoint;
+                            }
+                            
+                            listContainer.scrollTop = exactScroll;
+                        } else {
+                            exactScroll = listContainer.scrollTop;
+                        }
+                        
+                        reqAnimFrame = requestAnimationFrame(scrollLoop);
+                    }
+                    
+                    reqAnimFrame = requestAnimationFrame(scrollLoop);
+                }
+            }, 300);
+        }
+
+        // --- INICIALIZACIÓN AUTOMÁTICA ---
+        window.onload = () => {
+            fetchCloudData(); // Llamada inicial
+            setInterval(fetchCloudData, 15000); // Actualización cada 15 segundos
+        };
+
+    </script>
+</body>
+</html>
